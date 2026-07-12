@@ -1,4 +1,6 @@
 
+using BLL.Services.Implementation;
+using BLL.Services.Interface;
 using DAL;
 using DAL.Repository.Class;
 using DAL.Repository.Interface;
@@ -27,17 +29,23 @@ namespace TicketPluse
             });
             builder.Services.AddControllers();
             builder.Services.AddOpenApi();
-            builder.Services.AddTransient(typeof(IGenaricRebo<>), typeof(GenaricRebo<>));
+            builder.Services.AddTransient(typeof(IGenaricRePo<>), typeof(GenaricRebo<>));
+            builder.Services.AddScoped<IBookingService, BookingService>();
 
             builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
             builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
             builder.Services.AddProblemDetails();
             var app = builder.Build();
-
             // Configure the HTTP request pipeline.
             if (app.Environment.IsDevelopment())
             {
+                // MapOpenApi مكتوبة مرة واحدة فقط هنا!
                 app.MapOpenApi();
+
+                // تشغيل واجهة الـ UI
+                app.UseSwaggerUI(options => {
+                    options.SwaggerEndpoint("/openapi/v1.json", "TicketPulse API v1");
+                });
             }
 
             app.UseHttpsRedirection();
@@ -45,6 +53,7 @@ namespace TicketPluse
             app.UseAuthorization();
 
             app.UseExceptionHandler();
+
             app.MapControllers();
 
             app.Run();
