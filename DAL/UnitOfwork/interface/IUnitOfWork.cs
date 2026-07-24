@@ -6,7 +6,7 @@ namespace DAL.UnitOfWork
 {
     public interface IUnitOfWork : IDisposable
     {
-        IGenaricRebo<TEntity> Repository<TEntity>() where TEntity : class;
+        IGenaricRePo<TEntity> Repository<TEntity>() where TEntity : class;
 
         Task<int> CompleteAsync();
     }

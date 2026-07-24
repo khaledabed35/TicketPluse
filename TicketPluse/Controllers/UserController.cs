@@ -18,7 +18,6 @@ namespace TicketPluse.Controllers
             _user = user;
         }
 
-        // 1. جلب كل المستخدمين بالـ DTO
         [HttpGet("getAll-users")]
         public async Task<IActionResult> GetAll([FromQuery] UserQueryParameters pram)
         {

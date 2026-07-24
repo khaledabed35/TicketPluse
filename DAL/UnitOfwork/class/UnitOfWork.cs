@@ -16,7 +16,7 @@ namespace DAL.UnitOfWork
             _context = context;
         }
 
-        public IGenaricRebo<TEntity> Repository<TEntity>() where TEntity : class
+        public IGenaricRePo<TEntity> Repository<TEntity>() where TEntity : class
         {
             if (_repositories == null) _repositories = new Hashtable();
 
@@ -30,7 +30,7 @@ namespace DAL.UnitOfWork
                 _repositories.Add(type, repositoryInstance);
             }
 
-            return (IGenaricRebo<TEntity>)_repositories[type]!;
+            return (IGenaricRePo<TEntity>)_repositories[type]!;
         }
 
         public async Task<int> CompleteAsync()

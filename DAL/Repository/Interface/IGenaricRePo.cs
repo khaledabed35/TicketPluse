@@ -1,10 +1,11 @@
-﻿using System;
+﻿using DAL.Specification.Interface;
+using System;
 using System.Collections.Generic;
 using System.Text;
 
 namespace DAL.Repository.Interface
 {
-    public interface IGenaricRebo<T>where T : class
+    public interface IGenaricRePo<T>where T : class
 
 
     {
@@ -19,5 +20,6 @@ namespace DAL.Repository.Interface
 
         void Delete(T entity);
         Task<bool> savechange();
+        Task<IReadOnlyList<T>> GetWithSpecAsync(ISpecification<T> spec);
     }
 }

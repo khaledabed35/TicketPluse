@@ -1,4 +1,6 @@
 ﻿using DAL.Repository.Interface;
+using DAL.Specification.Class;
+using DAL.Specification.Interface;
 using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
@@ -6,7 +8,7 @@ using System.Text;
 
 namespace DAL.Repository.Class
 {
-    public class GenaricRebo<T> : IGenaricRebo<T> where T : class
+    public class GenaricRebo<T> : IGenaricRePo<T> where T : class
     {
         protected readonly AppDbContext _context;
 
@@ -22,6 +24,10 @@ namespace DAL.Repository.Class
         public void Delete(T entity)
         {
             _context.Set<T>().Remove(entity);
+        }
+        public async Task<IReadOnlyList<T>> GetWithSpecAsync(ISpecification<T> spec)
+        {
+            return await ApplySpecification(spec).ToListAsync();
         }
 
         public async Task<IReadOnlyList<T>> GetAllAsync()
@@ -43,6 +49,10 @@ namespace DAL.Repository.Class
         {
             _context.Set<T>().Update(entity);
 
+        }
+        private IQueryable<T> ApplySpecification(ISpecification<T> spec)
+        {
+            return Evaluator<T>.GetQuery(_context.Set<T>(), spec);
         }
     }
 }

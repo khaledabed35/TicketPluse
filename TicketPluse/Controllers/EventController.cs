@@ -34,7 +34,6 @@ namespace EduMangment.Controllers
         }
 
         [HttpPost]
-        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> CreateEvent([FromBody] EventDto dto)
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);

@@ -7,27 +7,31 @@ using DAL.Repository.Class;
 using DAL.Repository.Interface;
 using DAL.UnitOfWork;
 using EduManage.API.Error;
-using EduMangment.Services.Classes;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using StackExchange.Redis;
+using System.IdentityModel.Tokens.Jwt;
 using System.Text;
 using TicketPluse.Helper;
+using TicketPluse.Services.Classes;
 
 namespace TicketPluse
 {
     public class Program
     {
         public static void Main(string[] args)
+
         {
+            System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
+
             var builder = WebApplication.CreateBuilder(args);
+
 
             builder.Services.AddDbContext<AppDbContext>(options =>
                 options.UseSqlServer(
                     builder.Configuration.GetConnectionString("DefaultConnection")));
-
             builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
             {
                 var configuration = ConfigurationOptions.Parse(builder.Configuration.GetConnectionString("Redis"), true);
@@ -107,6 +111,8 @@ namespace TicketPluse
             builder.Services.AddScoped<IUser, UserService>();
             builder.Services.AddScoped<INotificationService, NotificationService>();
             builder.Services.AddScoped<IBookkingService, BookinService>();
+            builder.Services.AddScoped<IPaymentService, PaymentService>();
+            builder.Services.AddScoped<ISeatService, SeatServices>();
 
 
             builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
@@ -121,13 +127,13 @@ namespace TicketPluse
                 });
             }
 
+            app.UseExceptionHandler();
+
             app.UseHttpsRedirection();
 
-            app.UseAuthentication(); 
+            app.UseAuthentication();
 
             app.UseAuthorization();
-
-            app.UseExceptionHandler();
 
             app.MapControllers();
 

@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 
 namespace TicketPluse.Controllers
 {
-    [Authorize] // 🔒 حماية الـ Endpoints لليوزرز المسجلين فقط
+    [AllowAnonymous]
     [Route("api/[controller]")]
     [ApiController]
     public class BookingController : ControllerBase
@@ -20,14 +20,12 @@ namespace TicketPluse.Controllers
         {
             _bookingService = bookingService;
         }
-
-        // 1. حجز كرسي (يتحول لـ Locked)
         [HttpPost("book")]
         public async Task<IActionResult> BookSeat([FromBody] BookingRequestDto dto)
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
 
-            // استخراج الـ User ID من التوكن
+            // 👈 الكود ده دلوقتي هيقرأ الـ ID تلقائياً من الـ Cookie اللي مبعوتة
             var userIdStr = User.FindFirst("uid")?.Value ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             if (string.IsNullOrEmpty(userIdStr)) return Unauthorized();
 
@@ -41,8 +39,6 @@ namespace TicketPluse.Controllers
 
             return Ok(order);
         }
-
-        // 2. تأكيد الدفع وتوليد التذكرة
         [HttpPost("confirm-payment")]
         public async Task<IActionResult> ConfirmPayment(int orderId, string transactionId)
         {

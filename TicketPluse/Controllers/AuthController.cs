@@ -1,4 +1,5 @@
 ﻿using Azure.Messaging;
+using BLL.Dto;
 using BLL.Services.Interface;
 using DAL.Data.AuthModel;
 using Microsoft.AspNetCore.Authorization;
@@ -35,12 +36,24 @@ namespace EduMangment.Controllers
             if (!result.IsAuthenticated)
                 return BadRequest(result.Message);
 
+            if (!string.IsNullOrEmpty(result.token))
+            {
+                Response.Cookies.Append("jwtToken", result.token, new CookieOptions
+                {
+                    HttpOnly = true,
+                    Secure = true,
+                    SameSite = SameSiteMode.Strict,
+                    Expires = result.expireon
+                });
+            }
+
             return Ok(new
             {
-                Message = "Registration completed successfully. Please check your email to confirm your account."
+                Message = "Registration completed successfully. Please check your email to confirm your account.",
+                Username = result.username,
+                Email = result.email
             });
         }
-
         // ================= LOGIN =================
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] loginModel model)
@@ -93,9 +106,9 @@ namespace EduMangment.Controllers
         // ================= RemoveAdminRole =================
         [HttpPost("RemoveAdminRole")]
         [Authorize(Roles = "Admin")]
-        public async Task<IActionResult> RemoveAdminRole([FromBody] string email)
+        public async Task<IActionResult> RemoveAdminRole([FromBody] RemoveRoleDto dto)
         {
-            if (string.IsNullOrWhiteSpace(email))
+            if (string.IsNullOrWhiteSpace(dto.Email))
                 return BadRequest(new { Message = "Email is required" });
 
             var adminIdStr = User.FindFirst("uid")?.Value;
@@ -104,7 +117,7 @@ namespace EduMangment.Controllers
 
             // 👈 2. تحويل الـ string لـ Guid
             var adminGuid = Guid.Parse(adminIdStr);
-            var result = await _authServices.RemoveAdminRoleAsync(adminGuid, email);
+            var result = await _authServices.RemoveAdminRoleAsync(adminGuid, dto.Email);
 
             if (result == "Admin role removed successfully")
                 return Ok(new { Message = result });
@@ -117,34 +130,30 @@ namespace EduMangment.Controllers
 
         // ================= ASSIGN ROLE =================
         [HttpPost("AddRoleToUser")]
-        [Authorize(Roles = "Admin")] // الأفضل حمايتها بالأدمن
-        public async Task<IActionResult> AddRoleToUser([FromBody] string userEmail)
+        public async Task<IActionResult> AddRoleToUser([FromBody] AddRoleModel model)
         {
             try
             {
-                var adminIdStr = User.FindFirst("uid")?.Value;
+                // 🌟 قراءة الـ uid بأكثر من طريقة لضمان عدم حدوث تضارب في أسامي الـ Claims
+                var adminIdStr = User.Claims.FirstOrDefault(c => c.Type == "uid")?.Value
+                                 ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
                 if (string.IsNullOrWhiteSpace(adminIdStr))
-                    return Unauthorized(new { Message = "Unauthorized" });
+                    return Unauthorized(new { Message = "Unauthorized: Token or UID claim not found." });
 
-                if (string.IsNullOrWhiteSpace(userEmail))
-                    return BadRequest(new { Message = "User email is required." });
+                if (model == null || string.IsNullOrWhiteSpace(model.email) || string.IsNullOrWhiteSpace(model.role))
+                    return BadRequest(new { Message = "Email and Role are required." });
 
-                // 👈 3. تحويل الـ string لـ Guid وتصحيح التعامل مع الـ string.Empty من الـ Service
-                var adminGuid = Guid.Parse(adminIdStr);
-                var result = await _authServices.setAdminRoleAsync(adminGuid, userEmail);
+                var result = await _authServices.AddRoleAsync(model);
 
-                if (result != "Admin role assigned successfully")
+                if (result != "Role added successfully")
                     return BadRequest(new { Message = result });
 
-                return Ok(new { Message = "Admin role assigned successfully." });
+                return Ok(new { Message = $"Role '{model.role}' assigned successfully to {model.email}." });
             }
             catch (Exception ex)
             {
-                return StatusCode(StatusCodes.Status500InternalServerError, new
-                {
-                    Message = ex.Message
-                });
+                return StatusCode(StatusCodes.Status500InternalServerError, new { Message = ex.Message });
             }
         }
 
@@ -181,21 +190,30 @@ namespace EduMangment.Controllers
 
         // ================= FORGET PASSWORD =================
         [HttpPost("ForgotPassword")]
-        public async Task<IActionResult> ForgotPassword([FromBody] string email)
+        public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordDto confirm)
         {
-            if (string.IsNullOrWhiteSpace(email))
+            if (string.IsNullOrWhiteSpace(confirm.Email))
             {
-                return BadRequest(new { Message = "Email is required." });
+                return BadRequest(new
+                {
+                    Message = "Email is required."
+                });
             }
 
-            var result = await _authServices.ForgotPassword(email);
+            var result = await _authServices.ForgotPassword(confirm.Email);
 
-            if (result != "Password reset email sent successfully")
+            if (!string.IsNullOrEmpty(result))
             {
-                return BadRequest(new { Message = result });
+                return BadRequest(new
+                {
+                    Message = result
+                });
             }
 
-            return Ok(new { Message = "Password reset link has been sent successfully." });
+            return Ok(new
+            {
+                Message = "Password reset link has been sent successfully."
+            });
         }
 
         // ================= FORGET PASSWORD CONFIRM =================

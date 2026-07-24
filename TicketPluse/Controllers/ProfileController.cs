@@ -7,7 +7,6 @@ using System.Threading.Tasks;
 
 namespace EduMangment.Controllers
 {
-    [Authorize] // حماية الكنترولر كامل؛ لازم يوزر مسجل دخول ومعه Token صالح
     [ApiController]
     [Route("api/[controller]")]
     public class ProfileController : ControllerBase

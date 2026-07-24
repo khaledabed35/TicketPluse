@@ -1,4 +1,5 @@
 ﻿using DAL.Data;
+using DAL.Data.AuthModel;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore; 
 using Microsoft.EntityFrameworkCore;
@@ -6,7 +7,7 @@ using System;
 
 namespace DAL
 {
-    public class AppDbContext : IdentityDbContext<User, IdentityRole<Guid>, Guid>
+    public class AppDbContext : IdentityDbContext<App_user,IdentityRole<Guid>,Guid>
     {
         public AppDbContext(DbContextOptions<AppDbContext> options) : base(options)
         {
@@ -16,13 +17,13 @@ namespace DAL
         public DbSet<Event> events { get; set; }
         public DbSet<Seat> seats { get; set; }
         public DbSet<Order> orders { get; set; }
-
+        public DbSet<UserProfile> userProfiles { get; set; }
+        public DbSet<Notification> Notification { get; set; }
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            // سطر السحر: لازم تسيب السطر ده في الأول عشان يفرش جداول الـ Identity بالـ Guid صح
             base.OnModelCreating(modelBuilder);
 
-            modelBuilder.Entity<User>(entity =>
+            modelBuilder.Entity<App_user>(entity =>
             {
                 // الـ Id موروث كـ Guid خلاص
                 entity.HasIndex(u => u.Email).IsUnique();
@@ -30,6 +31,11 @@ namespace DAL
                 entity.Property(u => u.l_name).HasMaxLength(50).IsRequired();
             });
 
+            modelBuilder.Entity<Notification>()
+        .HasOne(n => n.App_user)                     
+        .WithMany(u => u.Notifications)            
+        .HasForeignKey(n => n.App_userId)            
+        .OnDelete(DeleteBehavior.Cascade);
             modelBuilder.Entity<Event>(entity =>
             {
                 entity.HasKey(e => e.Eid);
@@ -59,7 +65,6 @@ namespace DAL
                 entity.Property(o => o.PaymentStatus).HasConversion<string>().HasMaxLength(20);
                 entity.Property(o => o.PaymentGatewayTransactionId).HasMaxLength(100);
 
-                // العلاقة دي دلوقتي هتربط Guid مع Guid بدون أي اعتراض!
                 entity.HasOne(o => o.User)
                       .WithMany(u => u.Orders)
                       .HasForeignKey(o => o.Uid)

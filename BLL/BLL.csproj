@@ -7,7 +7,14 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Folder Include="Redis\" />
+    <PackageReference Include="MailKit" Version="4.17.0" />
+    <PackageReference Include="Microsoft.SharePointOnline.CSOM" Version="16.1.27424.12000" />
+    <PackageReference Include="MimeKit" Version="4.17.0" />
+    <PackageReference Include="StackExchange.Redis" Version="3.0.17" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DAL\DAL.csproj" />
   </ItemGroup>
 
 </Project>
