@@ -15,22 +15,39 @@ namespace BLL.Services.Class
     {
         private readonly IGenaricRePo<Event> _eventRepo;
         private readonly IGenaricRePo<Seat> _seatRepo;
-        private readonly INotificationService _notificationService; // 👈 1. تعريف السيرفيس هنا
+        private readonly INotificationService _notificationService;
+        private readonly ICacheService _cacheService;
+        private readonly INotificationQueue _notificationQueue; // ✅ متعرفة تمام هنا
 
-        // 👈 2. احقن الـ INotificationService جوة الكنستركتور هنا
-        public EventService(IGenaricRePo<Event> eventRepo, IGenaricRePo<Seat> seatRepo, INotificationService notificationService)
+        // 🌟 التصليح هنا: ضفنا INotificationQueue notificationQueue جوه الـ Parameters وعملنا له ربط
+        public EventService(
+            IGenaricRePo<Event> eventRepo,
+            IGenaricRePo<Seat> seatRepo,
+            INotificationService notificationService,
+            ICacheService cacheService,
+            INotificationQueue notificationQueue) // 👈 ضفناه هنا
         {
             _eventRepo = eventRepo;
             _seatRepo = seatRepo;
-            _notificationService = notificationService; // 👈 ربط السيرفيس
+            _notificationService = notificationService;
+            _cacheService = cacheService;
+            _notificationQueue = notificationQueue; // 👈 ربطناه هنا
         }
 
         public async Task<IEnumerable<EventDto>> GetAllEventsAsync(EventQueryParameters queryParams)
         {
+            string cacheKey = "events:all";
+
+            var cachedEvents = await _cacheService.GetAsync<List<EventDto>>(cacheKey);
+            if (cachedEvents != null)
+            {
+                return cachedEvents;
+            }
+
             var events = await _eventRepo.GetAllAsync();
             var filteredEvents = events.AsQueryable();
 
-            return filteredEvents.Select(e => new EventDto
+            var eventDtos = filteredEvents.Select(e => new EventDto
             {
                 Eid = e.Eid,
                 Title = e.Title,
@@ -40,14 +57,29 @@ namespace BLL.Services.Class
                 StartDate = e.StartDate,
                 EndDate = e.EndDate
             }).ToList();
+
+            if (eventDtos.Any())
+            {
+                await _cacheService.SetAsync(cacheKey, eventDtos, TimeSpan.FromMinutes(30));
+            }
+
+            return eventDtos;
         }
 
         public async Task<EventDto?> GetEventByIdAsync(Guid id)
         {
+            string cacheKey = $"event:{id}";
+
+            var cachedEvent = await _cacheService.GetAsync<EventDto>(cacheKey);
+            if (cachedEvent != null)
+            {
+                return cachedEvent;
+            }
+
             var e = await _eventRepo.GetByIdAsync(id);
             if (e == null) return null;
 
-            return new EventDto
+            var dto = new EventDto
             {
                 Eid = e.Eid,
                 Title = e.Title,
@@ -57,9 +89,12 @@ namespace BLL.Services.Class
                 StartDate = e.StartDate,
                 EndDate = e.EndDate
             };
+
+            await _cacheService.SetAsync(cacheKey, dto, TimeSpan.FromMinutes(30));
+
+            return dto;
         }
 
-        // 3. إنشاء إيفنت جديد مع الإشعارات
         public async Task<EventDto> CreateEventAsync(EventDto dto)
         {
             var newEvent = new Event
@@ -73,22 +108,25 @@ namespace BLL.Services.Class
                 EndDate = dto.EndDate
             };
 
-            // أ. حفظ الإيفنت أولاً في الداتابيز
             await _eventRepo.AddAsync(newEvent);
             await _eventRepo.savechange();
 
-            // 🚀 ب. السحر هنا: إرسال الإشعار لجميع المستخدمين فوراً بعد الحفظ
+            await _cacheService.RemoveAsync("events:all");
+
             string notificationTitle = "🔥 New Event Released!";
             string notificationMessage = $"Hurry up! Book your seat now for '{newEvent.Title}' at {newEvent.Place}.";
 
-            // 👈 الـ await هنا قاتلة وإلزامية عشان تستنى الحفظ يخلص
-            await _notificationService.BroadcastNotificationAsync(notificationTitle, notificationMessage);
+            // 🚀 دلوقتي دي هتشتغل طيارة وبدون أي Null Reference!
+            await _notificationQueue.QueueNotificationAsync(new NotificationMessage
+            {
+                Title = notificationTitle,
+                Message = notificationMessage
+            });
 
             dto.Eid = newEvent.Eid;
             return dto;
         }
 
-        // 4. تعديل إيفنت موجود
         public async Task<EventDto?> UpdateEventAsync(Guid id, EventDto dto)
         {
             var existingEvent = await _eventRepo.GetByIdAsync(id);
@@ -102,7 +140,10 @@ namespace BLL.Services.Class
             existingEvent.EndDate = dto.EndDate;
 
             _eventRepo.Update(existingEvent);
-            await _eventRepo.savechange(); // تأكد إن الـ savechange معمولة هنا برضه
+            await _eventRepo.savechange();
+
+            await _cacheService.RemoveAsync("events:all");
+            await _cacheService.RemoveAsync($"event:{id}");
 
             dto.Eid = existingEvent.Eid;
             return dto;
@@ -115,13 +156,30 @@ namespace BLL.Services.Class
 
             _eventRepo.Delete(existingEvent);
             await _eventRepo.savechange();
+
+            await _cacheService.RemoveAsync("events:all");
+            await _cacheService.RemoveAsync($"event:{id}");
+            await _cacheService.RemoveAsync($"seats:event:{id}");
+
             return true;
         }
 
         public async Task<IEnumerable<Seat>> GetEventSeatsAsync(Guid eventId)
         {
+            string cacheKey = $"event:{eventId}:seats_raw";
+
+            var cachedSeats = await _cacheService.GetAsync<List<Seat>>(cacheKey);
+            if (cachedSeats != null) return cachedSeats;
+
             var allSeats = await _seatRepo.GetAllAsync();
-            return allSeats.Where(s => s.EventId == eventId).ToList();
+            var eventSeats = allSeats.Where(s => s.EventId == eventId).ToList();
+
+            if (eventSeats.Any())
+            {
+                await _cacheService.SetAsync(cacheKey, eventSeats, TimeSpan.FromMinutes(5));
+            }
+
+            return eventSeats;
         }
     }
 }

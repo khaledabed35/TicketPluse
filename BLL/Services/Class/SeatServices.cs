@@ -3,6 +3,10 @@ using BLL.Services.Interface;
 using DAL.Data;
 using DAL.Repository.Interface;
 using DAL.Specification;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace BLL.Services.Class
 {
@@ -10,13 +14,16 @@ namespace BLL.Services.Class
     {
         private readonly IGenaricRePo<Seat> _seat;
         private readonly IGenaricRePo<Event> _event;
+        private readonly ICacheService _cacheService; // 🌟 حقن الـ Redis Cache
 
         public SeatServices(
             IGenaricRePo<Seat> seat,
-            IGenaricRePo<Event> @event)
+            IGenaricRePo<Event> @event,
+            ICacheService cacheService) // 🌟 ضفناها في الـ Constructor
         {
             _seat = seat;
             _event = @event;
+            _cacheService = cacheService;
         }
 
         public async Task<string> CreateSeatAsync(SeatDto dto)
@@ -27,7 +34,6 @@ namespace BLL.Services.Class
                 return "Event not found";
 
             var spec = new SeatFilterSpecification(dto);
-
             var existingSeat = await _seat.GetWithSpecAsync(spec);
 
             if (existingSeat.Any())
@@ -39,13 +45,16 @@ namespace BLL.Services.Class
                 Section = dto.Section,
                 Row = dto.Row,
                 Number = dto.Number,
-                Price = dto.Price ?? 0m, // لو بـ null هينزل بـ 0
+                Price = dto.Price ?? 0m,
                 Status = dto.Status ?? SeatStatus.Available
             };
 
             await _seat.AddAsync(seat);
-
             await _seat.savechange();
+
+            // 🌟 طالما ضفنا كرسي جديد، طير كاش المقاعد المتاح للإيفينت ده
+            string cacheKey = $"seats:event:{dto.EventId}";
+            await _cacheService.RemoveAsync(cacheKey);
 
             return "Seat created successfully";
         }
@@ -58,8 +67,11 @@ namespace BLL.Services.Class
                 return false;
 
             _seat.Delete(seat);
-
             await _seat.savechange();
+
+            // 🌟 طير كاش الإيفينت عشان الكرسي اللي اتمسح يختفي فوراً من عند اليوزرز
+            string cacheKey = $"seats:event:{seat.EventId}";
+            await _cacheService.RemoveAsync(cacheKey);
 
             return true;
         }
@@ -68,11 +80,24 @@ namespace BLL.Services.Class
         {
             try
             {
-                var spec = new SeatFilterSpecification(filter);
+                // 🌟 عمل مفتاح كاش فريد لكل EventId مبعوت في الفلتر
+                // لو الـ EventId بـ null بنعمل كاش عام للكل
+                string cacheKey = filter.EventId.HasValue
+                    ? $"seats:event:{filter.EventId}"
+                    : "seats:all";
 
+                // 1. حاول تقرأ من الـ Redis أولاً
+                var cachedSeats = await _cacheService.GetAsync<List<SeatDto>>(cacheKey);
+                if (cachedSeats != null)
+                {
+                    return cachedSeats; // رجع الداتا طيران ✈️
+                }
+
+                // 2. لو مش متكشة، هاتها من الـ DB بالـ Specification بتاعتك
+                var spec = new SeatFilterSpecification(filter);
                 var seats = await _seat.GetWithSpecAsync(spec);
 
-                return seats.Select(s => new SeatDto
+                var seatDtos = seats.Select(s => new SeatDto
                 {
                     EventId = s.EventId,
                     Number = s.Number,
@@ -81,12 +106,21 @@ namespace BLL.Services.Class
                     Price = s.Price,
                     Status = s.Status
                 }).ToList();
+
+                // 3. خزن الداتا في الـ Redis تعيش لمدة 10 دقائق مثلاً
+                if (seatDtos.Any())
+                {
+                    await _cacheService.SetAsync(cacheKey, seatDtos, TimeSpan.FromMinutes(10));
+                }
+
+                return seatDtos;
             }
             catch (Exception ex)
             {
-                throw new Exception($"بص يا هندسة الإيرور هنا أهو: {ex.Message} -> {ex.InnerException?.Message}", ex);
+                throw new Exception("Error fetching seats: " + ex.Message, ex);
             }
         }
+
         public async Task<SeatDto> GetSeatAsyncById(Guid seatId)
         {
             try
@@ -107,8 +141,9 @@ namespace BLL.Services.Class
             }
             catch (Exception ex)
             {
-                throw new Exception($"بص يا هندسة الإيرور هنا أهو: {ex.Message} -> {ex.InnerException?.Message}");
+                throw new Exception("Error fetching seat by ID: " + ex.Message, ex);
             }
+
         }
 
         public async Task<string> UpdateSeatAsync(Guid seatId, SeatDto dto)
@@ -127,11 +162,13 @@ namespace BLL.Services.Class
                 return "Event not found";
 
             var spec = new SeatFilterSpecification(dto);
-
             var duplicateSeat = await _seat.GetWithSpecAsync(spec);
 
             if (duplicateSeat.Any(s => s.Id != seatId))
                 return "Seat already exists";
+
+            var oldEventId = seat.EventId;
+
             seat.EventId = dto.EventId ?? seat.EventId;
             seat.Section = dto.Section;
             seat.Row = dto.Row;
@@ -140,8 +177,13 @@ namespace BLL.Services.Class
             seat.Status = dto.Status ?? seat.Status;
 
             _seat.Update(seat);
-
             await _seat.savechange();
+
+            await _cacheService.RemoveAsync($"seats:event:{oldEventId}");
+            if (dto.EventId.HasValue && dto.EventId != oldEventId)
+            {
+                await _cacheService.RemoveAsync($"seats:event:{dto.EventId}");
+            }
 
             return "Seat updated successfully";
         }

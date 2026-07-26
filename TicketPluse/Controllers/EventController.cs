@@ -55,7 +55,7 @@ namespace EduMangment.Controllers
         }
 
         [HttpDelete("{id}")]
-        [Authorize(Roles = "Admin")]
+        [Authorize]
         public async Task<IActionResult> DeleteEvent(Guid id)
         {
             var success = await _eventService.DeleteEventAsync(id);

@@ -1,6 +1,8 @@
-﻿using BLL.Services.Interface;
+﻿using BLL.Services.Class;
+using BLL.Services.Interface;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.SharePoint.Client;
 using System;
 using System.Security.Claims;
 using System.Threading.Tasks;
@@ -59,5 +61,30 @@ namespace EduMangment.Controllers
             await _notificationService.MarkAllAsReadAsync(userGuid);
             return Ok(new { Message = "All notifications marked as read" });
         }
+        [Authorize(Roles = "Admin")]
+        [HttpDelete("{id:int}")]
+        public async Task<IActionResult> DeleteNotification([FromRoute] int id)
+        {
+            // الترتيب الصح اللي شغال في بقية الـ Controller عندك: بنجيب الـ uid الأول
+            var userIdClaim = User.FindFirst("uid")?.Value
+                              ?? User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                              ?? User.FindFirst("sub")?.Value;
+
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out Guid userId))
+            {
+                return Unauthorized(new { message = "User identity is invalid or missing." });
+            }
+
+            var result = await _notificationService.DeleteNotificationAsync(id, userId);
+
+            if (!result)
+            {
+                return NotFound(new { message = "Notification not found or you don't have permission to delete it." });
+            }
+
+            return Ok(new { message = "Notification deleted successfully." });
+        
     }
+}
+        
 }

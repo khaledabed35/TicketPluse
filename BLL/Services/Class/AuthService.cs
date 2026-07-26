@@ -233,6 +233,7 @@ namespace TicketPluse.Services.Classes
                 "Confirm your email"
             );
 
+
             if (!string.IsNullOrEmpty(sendemail))
             {
                 await _userManager.DeleteAsync(user);

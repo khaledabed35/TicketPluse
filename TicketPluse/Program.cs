@@ -104,6 +104,7 @@ namespace TicketPluse
             builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
             // الـ Services الأساسية
+            builder.Services.AddScoped<ICacheService, CacheService>();
             builder.Services.AddScoped<IAuthService, AuthServices>(); 
             builder.Services.AddScoped<IProfileService, ProfileService>();
             builder.Services.AddScoped<IEmailService, EmailService>();
@@ -113,7 +114,9 @@ namespace TicketPluse
             builder.Services.AddScoped<IBookkingService, BookinService>();
             builder.Services.AddScoped<IPaymentService, PaymentService>();
             builder.Services.AddScoped<ISeatService, SeatServices>();
+            builder.Services.AddSingleton<INotificationQueue, NotificationQueue>();
 
+            builder.Services.AddHostedService<NotificationBackgroundWorker>();
 
             builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
             builder.Services.AddProblemDetails();

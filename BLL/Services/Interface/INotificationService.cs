@@ -16,6 +16,7 @@ namespace BLL.Services.Interface
         Task<bool> MarkAsReadAsync(int notificationId, Guid userId);
 
         Task<bool> MarkAllAsReadAsync(Guid userId);
+        Task<bool> DeleteNotificationAsync(int notificationId, Guid userId);
 
     }
 }

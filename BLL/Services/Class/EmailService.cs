@@ -424,7 +424,6 @@ public class EmailService : IEmailService
         }
         catch (Exception ex)
         {
-            // يفضل تسجيل الخطأ باستخدام ILogger بدلاً من تجاهله
             Console.WriteLine(ex.Message);
         }
     }
