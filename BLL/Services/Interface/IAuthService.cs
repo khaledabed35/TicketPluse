@@ -20,5 +20,6 @@ namespace BLL.Services.Interface
         Task<IReadOnlyCollection<UserDto>> GetAllUserAsync(Guid adminId);
         Task<bool> IsAdmin(Guid userId);
         Task<bool> IsUser(Guid userId);
+        Task<AuthModel> RefreshTokenAsync(TokenRequestDto dto);
     }
 }

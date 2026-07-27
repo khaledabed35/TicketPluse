@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 using System;
 using System.Security.Claims;
 using System.Threading.Tasks;
+using TicketPluse.Services.Classes;
 
 namespace EduMangment.Controllers
 {
@@ -128,6 +129,18 @@ namespace EduMangment.Controllers
             return BadRequest(new { Message = result });
         }
 
+        [HttpPost("refresh-token")]
+        public async Task<IActionResult> RefreshToken([FromBody] TokenRequestDto dto)
+        {
+            var result = await _authServices.RefreshTokenAsync(dto);
+
+            if (!result.IsAuthenticated)
+            {
+                return BadRequest(new { message = result.Message });
+            }
+
+            return Ok(result);
+        }
         // ================= ASSIGN ROLE =================
         [HttpPost("AddRoleToUser")]
         public async Task<IActionResult> AddRoleToUser([FromBody] AddRoleModel model)

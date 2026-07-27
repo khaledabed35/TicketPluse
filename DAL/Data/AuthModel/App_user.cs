@@ -12,5 +12,7 @@ namespace DAL.Data.AuthModel
 
         public List<Order> Orders { get; set; } = new List<Order>();
         public virtual ICollection<Notification> Notifications { get; set; } = new List<Notification>();
+        public string? RefreshToken { get; set; }
+        public DateTime RefreshTokenExpireTime { get; set; }
     }
 }

@@ -10,6 +10,7 @@ using System.Collections.Generic;
 using System.IdentityModel.Tokens.Jwt;
 using System.Linq;
 using System.Security.Claims;
+using System.Security.Cryptography; 
 using System.Text;
 using System.Threading.Tasks;
 using TicketPluse.Helper;
@@ -63,7 +64,6 @@ namespace TicketPluse.Services.Classes
             if (forgetPasswordConfirm.userid is null || forgetPasswordConfirm.token is null)
                 return "token is expired";
 
-            // 2. التحقق من تطابق كلمتي المرور أولاً لتوفير وقت البحث في الداتابيز
             if (forgetPasswordConfirm.newpassword != forgetPasswordConfirm.confirmpassword)
                 return "password not match";
 
@@ -77,7 +77,6 @@ namespace TicketPluse.Services.Classes
             if (user == null)
                 return "user not found";
 
-            // 3. فك تشفير التوكن
             var decodedToken = System.Web.HttpUtility.UrlDecode(forgetPasswordConfirm.token);
 
             var result = await _userManager.ResetPasswordAsync(user, decodedToken, forgetPasswordConfirm.newpassword);
@@ -87,6 +86,7 @@ namespace TicketPluse.Services.Classes
 
             return result.Errors.FirstOrDefault()?.Description ?? "password reset failed";
         }
+
         public async Task<IReadOnlyCollection<UserDto>> GetAllUserAsync(Guid adminId)
         {
             var admin = await _userManager.FindByIdAsync(adminId.ToString());
@@ -177,7 +177,13 @@ namespace TicketPluse.Services.Classes
                 return new AuthModel { Message = "Email is not confirmed" };
             }
 
+            // 🌟 توليد وتحديث الـ Refresh Token ليعيش 7 أيام
+            var refreshToken = GenerateRefreshToken();
+            user.RefreshToken = refreshToken;
+            user.RefreshTokenExpireTime = DateTime.UtcNow.AddDays(7);
+
             await _userManager.UpdateAsync(user);
+
             var jwtsecuritytoken = await CreateJwt(user);
             var role = await _userManager.GetRolesAsync(user);
 
@@ -189,6 +195,7 @@ namespace TicketPluse.Services.Classes
                 email = user.Email,
                 expireon = jwtsecuritytoken.ValidTo,
                 token = new JwtSecurityTokenHandler().WriteToken(jwtsecuritytoken),
+                RefreshToken = refreshToken, // 👈 محتاج تضيف البروبرتي دي في الـ AuthModel لو مش موجودة
                 role = role.ToList()
             };
         }
@@ -233,7 +240,6 @@ namespace TicketPluse.Services.Classes
                 "Confirm your email"
             );
 
-
             if (!string.IsNullOrEmpty(sendemail))
             {
                 await _userManager.DeleteAsync(user);
@@ -243,12 +249,18 @@ namespace TicketPluse.Services.Classes
             var rolename = "User";
             if (!await _roleManager.RoleExistsAsync(rolename))
             {
-                await _roleManager.CreateAsync(new IdentityRole<Guid>(rolename)); // 👈 تحديث لـ Guid
+                await _roleManager.CreateAsync(new IdentityRole<Guid>(rolename));
             }
 
             await _userManager.AddToRoleAsync(user, rolename);
-            var jwtsecuritytoken = await CreateJwt(user);
 
+            // 🌟 توليد وتحديث الـ Refresh Token عند التسجيل أيضاً
+            var refreshToken = GenerateRefreshToken();
+            user.RefreshToken = refreshToken;
+            user.RefreshTokenExpireTime = DateTime.UtcNow.AddDays(7);
+            await _userManager.UpdateAsync(user);
+
+            var jwtsecuritytoken = await CreateJwt(user);
 
             return new AuthModel
             {
@@ -258,10 +270,12 @@ namespace TicketPluse.Services.Classes
                 email = user.Email,
                 expireon = jwtsecuritytoken.ValidTo,
                 token = new JwtSecurityTokenHandler().WriteToken(jwtsecuritytoken),
+                RefreshToken = refreshToken,
                 role = new List<string> { rolename }
             };
         }
 
+        // 🌟 تعديل توليد الـ Access Token ليموت بعد ربع ساعة
         private async Task<JwtSecurityToken> CreateJwt(App_user user)
         {
             var claimsUser = await _userManager.GetClaimsAsync(user);
@@ -274,7 +288,7 @@ namespace TicketPluse.Services.Classes
                 new Claim(JwtRegisteredClaimNames.Email, user.Email ?? string.Empty),
                 new Claim("username", $"{user.f_name} {user.l_name}"),
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-                new Claim("uid", user.Id.ToString()) // 👈 تحويل الـ Guid لـ string داخل الـ Token
+                new Claim("uid", user.Id.ToString())
             }
             .Union(claimsUser)
             .Union(roleClaims);
@@ -286,10 +300,86 @@ namespace TicketPluse.Services.Classes
                 issuer: _jwt.Issuer,
                 audience: _jwt.Audience,
                 claims: claims,
-                expires: DateTime.Now.AddDays(_jwt.DurationInDay),
+                expires: DateTime.UtcNow.AddMinutes(15), // ⏱️ تموت كل ربع ساعة بالظبط
                 signingCredentials: signingCredentials
             );
             return Token;
+        }
+
+        // 🌟 ميثود توليد سترينج عشوائي مشفر للـ Refresh Token
+        private string GenerateRefreshToken()
+        {
+            var randomNumber = new byte[64];
+            using var rng = RandomNumberGenerator.Create();
+            rng.GetBytes(randomNumber);
+            return Convert.ToBase64String(randomNumber);
+        }
+
+        // 🌟 ميثود التجديد التلقائي (تأكد من إضافتها لـ IAuthService أولاً)
+        public async Task<AuthModel> RefreshTokenAsync(TokenRequestDto dto)
+        {
+            if (dto == null || string.IsNullOrEmpty(dto.AccessToken) || string.IsNullOrEmpty(dto.RefreshToken))
+                return new AuthModel { Message = "Invalid client request" };
+
+            var principal = GetPrincipalFromExpiredToken(dto.AccessToken);
+            if (principal == null)
+                return new AuthModel { Message = "Invalid access token" };
+
+            // استخراج الـ uid من التوكن الميت
+            var userIdStr = principal.Claims.FirstOrDefault(c => c.Type == "uid")?.Value;
+            if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var userId))
+                return new AuthModel { Message = "Invalid user token claims" };
+
+            var user = await _userManager.FindByIdAsync(userId.ToString());
+
+            // التشيك: هل التوكن مات؟ وهل الـ Refresh Token متطابق وصالح؟
+            if (user == null || user.RefreshToken != dto.RefreshToken || user.RefreshTokenExpireTime <= DateTime.UtcNow)
+                return new AuthModel { Message = "Invalid or expired refresh token" };
+
+            // توليد طقم جديد تماماً
+            var newJwtToken = await CreateJwt(user);
+            var newRefreshToken = GenerateRefreshToken();
+
+            // حفظ التحديثات في الداتابيز وتمديد الـ 7 أيام
+            user.RefreshToken = newRefreshToken;
+            user.RefreshTokenExpireTime = DateTime.UtcNow.AddDays(7);
+            await _userManager.UpdateAsync(user);
+
+            var roles = await _userManager.GetRolesAsync(user);
+
+            return new AuthModel
+            {
+                Message = "Token Refreshed Successfully",
+                IsAuthenticated = true,
+                username = user.UserName,
+                email = user.Email,
+                expireon = newJwtToken.ValidTo,
+                token = new JwtSecurityTokenHandler().WriteToken(newJwtToken),
+                RefreshToken = newRefreshToken,
+                role = roles.ToList()
+            };
+        }
+
+        // 🌟 فك التوكن الميت لاستخراج الـ Claims بدون ضرب Exception بسبب الـ Validation
+        private ClaimsPrincipal? GetPrincipalFromExpiredToken(string token)
+        {
+            var tokenValidationParameters = new TokenValidationParameters
+            {
+                ValidateAudience = false,
+                ValidateIssuer = false,
+                ValidateIssuerSigningKey = true,
+                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwt.Key)),
+                ValidateLifetime = false // 👈 بنلغي تشيك الوقت هنا عشان نعرف نقرأ التوكن الميت
+            };
+
+            var tokenHandler = new JwtSecurityTokenHandler();
+            var principal = tokenHandler.ValidateToken(token, tokenValidationParameters, out SecurityToken securityToken);
+
+            if (securityToken is not JwtSecurityToken jwtSecurityToken ||
+                !jwtSecurityToken.Header.Alg.Equals(SecurityAlgorithms.HmacSha256, StringComparison.InvariantCultureIgnoreCase))
+                return null;
+
+            return principal;
         }
 
         public async Task<App_user> GetuserData(Guid userid)
